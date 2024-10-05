@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 type Data struct {
@@ -40,6 +42,42 @@ func main() {
 			return
 		}
 		log.Println("receiving data:", data.Latitude, data.Longitude, data.Level)
+
+		connection, _ := amqp.Dial("amqps://gktopult:0SipH52ziVwwBCICELz96krbDbgvAYKs@jackal.rmq.cloudamqp.com/gktopult")
+		defer connection.Close()
+		channel, _ := connection.Channel()
+		defer channel.Close()
+
+		msg := amqp.Publishing{
+			DeliveryMode: 1,
+			Timestamp:    time.Now(),
+			ContentType:  "application/json",
+			Body:         body,
+		}
+
+		err = channel.Publish("receive.data.exchange", "ping", false, false, msg)
+		if err != nil {
+			log.Fatalln("erro ao publicar mensagem na fila")
+			return
+		}
+
+	}
+
+	connection, err := amqp.Dial("amqps://gktopult:0SipH52ziVwwBCICELz96krbDbgvAYKs@jackal.rmq.cloudamqp.com/gktopult")
+
+	if err != nil {
+		log.Fatalln("erro ao conectar com rabbit")
+	}
+	defer connection.Close()
+
+	channel, _ := connection.Channel()
+	defer channel.Close()
+
+	q, _ := channel.QueueDeclare("receive.data.queue", true, false, false, true, nil)
+	err = channel.QueueBind(q.Name, "#", "receive.data.exchange", false, nil)
+	if err != nil {
+		log.Fatalln(err)
+		return
 	}
 
 	http.Handle("/receive", http.HandlerFunc(helloHandler))
